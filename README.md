@@ -48,8 +48,8 @@ client/
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/your-username/ecommercehub-dashboard.git
-cd ecommercehub-dashboard/client](https://github.com/vivekvardhan30/Smart-Seller-Dashboard-for-E-commerce-Management.git)
+git clone https://github.com/vivekvardhan30/Smart-Seller-Dashboard-for-E-commerce-Management.git
+cd Smart-Seller-Dashboard-for-E-commerce-Management/client
 
 
 
