@@ -30,26 +30,22 @@ A feature-rich seller dashboard application built with React that empowers e-com
 - **Tooling**: Webpack, ESLint, Babel (configured via Create React App)
 
 ## 📁 Project Structure
-client/
-├── components/
-│ ├── SellerDashboard.jsx
-│ ├── ProductManagement.jsx
-│ ├── OrderManagement.jsx
-│ ├── Analytics.jsx
-│ ├── Header.jsx
-├── services/
-│ └── api.js
-├── App.js
-├── App.css
-└── index.js
+client/ \n
+├── components/ \n
+│ ├── SellerDashboard.jsx\n
+│ ├── ProductManagement.jsx\n
+│ ├── OrderManagement.jsx\n
+│ ├── Analytics.jsx\n
+│ ├── Header.jsx\n
+├── services/\n
+│ └── api.js\n
+├── App.js\n
+├── App.css\n
+└── index.js\n
 
-## 🛠️ Getting Started
 
-### 1. Clone the Repository
 
-```bash
-git clone https://github.com/vivekvardhan30/Smart-Seller-Dashboard-for-E-commerce-Management.git
-cd Smart-Seller-Dashboard-for-E-commerce-Management/client
+
 
 
 
