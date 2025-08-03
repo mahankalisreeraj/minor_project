@@ -29,7 +29,19 @@ A feature-rich seller dashboard application built with React that empowers e-com
 - **Backend (Pluggable)**: REST APIs (mocked via `ApiService.js`)
 - **Tooling**: Webpack, ESLint, Babel (configured via Create React App)
 
-
+## 📁 Project Structure
+client/
+├── components/
+│ ├── SellerDashboard.jsx
+│ ├── ProductManagement.jsx
+│ ├── OrderManagement.jsx
+│ ├── Analytics.jsx
+│ ├── Header.jsx
+├── services/
+│ └── api.js
+├── App.js
+├── App.css
+└── index.js
 
 ## 🛠️ Getting Started
 
@@ -43,5 +55,7 @@ cd ecommercehub-dashboard/client](https://github.com/vivekvardhan30/Smart-Seller
 
 
 
-## 📁 Project Structure
+
+
+
 
