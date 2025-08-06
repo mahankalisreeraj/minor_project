@@ -2,7 +2,7 @@
 
 A feature-rich seller dashboard application built with React that empowers e-commerce sellers to manage their **products**, **orders**, and **analytics** efficiently in real time.
 
-#🚀 Features 
+**🚀 Features** 
 
 **📦 Product Management**
 1)Add, edit, and delete products
@@ -31,6 +31,7 @@ A feature-rich seller dashboard application built with React that empowers e-com
 2)Extendable for customer-facing support or inventory assistance
 
 **🔐 Role-Based Authentication**
+
 1)Fully implemented Seller and Buyer roles
 
 2)Secure and modular access control
