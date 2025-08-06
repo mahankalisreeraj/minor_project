@@ -2,32 +2,37 @@
 
 A feature-rich seller dashboard application built with React that empowers e-commerce sellers to manage their **products**, **orders**, and **analytics** efficiently in real time.
 
-## 🚀 Features
+##🚀 Features
+**📦 Product Management
+Add, edit, and delete products
 
-### 📦 Product Management
-- Add, edit, and delete products
-- Upload product image, price, cost, stock, and description
-- Automatic low-stock alerts for inventory below threshold
+Upload product images, pricing, cost, stock levels, and descriptions
 
-### 📃 Order Management
-- View and filter orders by status (Pending, Processing, Shipped, Delivered, Cancelled)
-- Accept, cancel, or update order statuses dynamically
-- Visual order summaries with product thumbnails
+Automatic low-stock alerts for inventory below threshold
 
-### 📊 Business Analytics
-- Monthly revenue charts
-- Top-selling products list
-- Average order value and profit estimation
-- Conversion rate and low stock insights
+**📃 Order Management
+View and filter orders by status (Pending, Processing, Shipped, Delivered, Cancelled)
 
-### 🔐 Authentication & Roles (Extendable)
-- Designed to support Seller/Buyer roles (currently supports Seller UI)
+Accept, cancel, or update order statuses dynamically
 
-## 🧩 Tech Stack
+Visual order summaries with product thumbnails
 
-- **Frontend**: React, JavaScript, CSS (Custom, Modular)
-- **Backend (Pluggable)**: REST APIs (mocked via `ApiService.js`)
-- **Tooling**: Webpack, ESLint, Babel (configured via Create React App)
+**📊 Business Analytics
+Top-selling products overview
+
+Average order value and profit estimation
+
+Conversion rate and low-stock insights
+
+**🤖 AI Chatbot Integration
+Interactive AI chatbot for product and order queries
+
+Extendable for customer-facing support or inventory assistance
+
+**🔐 Role-Based Authentication
+Fully implemented Seller and Buyer roles
+
+Secure and modular access control
 
 
 
