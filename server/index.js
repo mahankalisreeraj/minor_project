@@ -1053,9 +1053,11 @@
 
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
 require('dotenv').config();
 const GoogleSheetsDB = require('./googleSheetsAPI');
 const { mockProducts, mockOrders } = require('./mockData');
+const MultilingualChatbot = require('./chatbotService');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -1095,6 +1097,22 @@ app.use((req, res, next) => {
 });
 
 const db = new GoogleSheetsDB();
+const chatbot = new MultilingualChatbot();
+
+// Configure multer for file uploads (for voice messages)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('audio/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only audio files are allowed'), false);
+    }
+  }
+});
 
 // Initialize Google Sheets connection
 db.initialize()
@@ -1931,6 +1949,414 @@ app.get('/api/orders/seller/:sellerId', async (req, res) => {
   }
 });
 
+// ===== CHATBOT ROUTES =====
+// 🤖 Main chatbot endpoint
+app.post('/api/chatbot/message', async (req, res) => {
+  try {
+    const { userId, message, userType = 'buyer', language = 'en', dbContext = {}, sellerId } = req.body;
+    
+    console.log('🤖 Chatbot message received:', { userId, userType, message: message?.substring(0, 100) });
+    
+    if (!userId || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID and message are required'
+      });
+    }
+
+    // Use provided dbContext from client or prepare database context
+    let finalDbContext = dbContext;
+    
+    // If no context provided, fetch from database
+    if (!dbContext.products && !dbContext.orders) {
+      try {
+        if (userType === 'seller') {
+          // Get seller-specific data
+          const products = await db.getAllProducts();
+          const orders = await db.getOrdersBySeller(sellerId || userId);
+          
+          finalDbContext = {
+            products: products.map(p => ({
+              id: p.get ? p.get('id') : p.id,
+              name: p.get ? p.get('name') : p.name,
+              price: parseFloat(p.get ? p.get('price') : p.price || 0),
+              stock: parseInt(p.get ? p.get('stock') : p.stock || 0),
+              sales: parseInt(p.get ? p.get('sales') : p.sales || 0),
+              cost: parseFloat(p.get ? p.get('cost') : p.cost || 0),
+              description: p.get ? p.get('description') : p.description,
+              sellerId: p.get ? p.get('sellerId') : p.sellerId
+            })),
+            orders: orders.map(o => ({
+              id: o.get ? o.get('id') : o.id,
+              status: o.get ? o.get('status') : o.status,
+              total: parseFloat(o.get ? o.get('total') : o.total || 0),
+              buyerId: o.get ? o.get('buyerId') : o.buyerId,
+              sellerId: o.get ? o.get('sellerId') : o.sellerId,
+              createdAt: o.get ? o.get('createdAt') : o.createdAt
+            }))
+          };
+        } else {
+          // Get buyer-specific data
+          const products = await db.getAllProducts();
+          
+          finalDbContext = {
+            products: products.map(p => {
+              // Handle both array and object formats
+              const hasNumericKeys = Object.keys(p).every(key => !isNaN(key)) || Array.isArray(p);
+              
+              if (hasNumericKeys) {
+                return {
+                  id: p[0] || `product_${Date.now()}_${Math.random()}`,
+                  sellerId: p[1] || 'unknown',
+                  name: p[2] || 'Unknown Product',
+                  name_en: p[3] || '',
+                  name_te: p[4] || '',
+                  name_hi: p[5] || '',
+                  name_bn: p[6] || '',
+                  name_mr: p[7] || '',
+                  name_ta: p[8] || '',
+                  name_ur: p[9] || '',
+                  price: parseFloat(p[10]) || 0,
+                  cost: parseFloat(p[11]) || 0,
+                  stock: parseInt(p[12]) || 0,
+                  sales: parseInt(p[13]) || 0,
+                  description: p[14] || '',
+                  description_en: p[15] || '',
+                  description_te: p[16] || '',
+                  description_hi: p[17] || '',
+                  description_bn: p[18] || '',
+                  description_mr: p[19] || '',
+                  description_ta: p[20] || '',
+                  description_ur: p[21] || '',
+                  image: p[22] || 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400&h=300&fit=crop',
+                  createdAt: p[23] || new Date().toISOString()
+                };
+              } else {
+                return {
+                  id: p.get('id') || p.id,
+                  name: p.get('name') || p.name,
+                  name_en: p.get('name_en') || p.name_en || '',
+                  name_te: p.get('name_te') || p.name_te || '',
+                  name_hi: p.get('name_hi') || p.name_hi || '',
+                  name_bn: p.get('name_bn') || p.name_bn || '',
+                  name_mr: p.get('name_mr') || p.name_mr || '',
+                  name_ta: p.get('name_ta') || p.name_ta || '',
+                  name_ur: p.get('name_ur') || p.name_ur || '',
+                  price: parseFloat(p.get('price') || p.price || 0),
+                  cost: parseFloat(p.get('cost') || p.cost || 0),
+                  stock: parseInt(p.get('stock') || p.stock || 0),
+                  sales: parseInt(p.get('sales') || p.sales || 0),
+                  description: p.get('description') || p.description || '',
+                  description_en: p.get('description_en') || p.description_en || '',
+                  description_te: p.get('description_te') || p.description_te || '',
+                  description_hi: p.get('description_hi') || p.description_hi || '',
+                  description_bn: p.get('description_bn') || p.description_bn || '',
+                  description_mr: p.get('description_mr') || p.description_mr || '',
+                  description_ta: p.get('description_ta') || p.description_ta || '',
+                  description_ur: p.get('description_ur') || p.description_ur || '',
+                  image: p.get('image') || p.image || 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400&h=300&fit=crop',
+                  sellerId: p.get('sellerId') || p.sellerId,
+                  createdAt: p.get('createdAt') || p.createdAt || new Date().toISOString()
+                };
+              }
+            }).filter(p => p.name && p.name !== 'Unknown Product' && p.price > 0)
+          };
+        }
+      } catch (dbError) {
+        console.error('Error fetching database context:', dbError);
+        // Use empty context if database fails
+        finalDbContext = { products: [], orders: [] };
+      }
+    }
+
+    // Process the message through the chatbot
+    const result = await chatbot.processMessage(userId, message, userType, finalDbContext);
+    
+    console.log('🤖 Chatbot response generated:', { success: result.success, responseLength: result.response?.length });
+    
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Chatbot error:', error);
+    res.status(500).json({
+      success: false,
+      response: "I'm experiencing technical difficulties. Please try again in a moment.",
+      error: error.message
+    });
+  }
+});
+
+// 🗣️ Voice message processing endpoint
+app.post('/api/chatbot/voice', upload.single('audio'), async (req, res) => {
+  try {
+    const { userId, userType = 'buyer', language = 'en', dbContext, sellerId } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Audio file is required'
+      });
+    }
+
+    console.log('🗣️ Voice message received:', { userId, userType, audioSize: req.file.size, language });
+
+    // Parse dbContext if it's a string
+    let parsedDbContext = {};
+    try {
+      parsedDbContext = typeof dbContext === 'string' ? JSON.parse(dbContext) : (dbContext || {});
+    } catch (parseError) {
+      console.error('Error parsing dbContext:', parseError);
+      parsedDbContext = {};
+    }
+
+    // For now, return a placeholder response
+    // In a real implementation, you would:
+    // 1. Convert audio to text using speech-to-text API (Google Cloud Speech-to-Text, Azure Speech, etc.)
+    // 2. Process the transcribed text through the chatbot
+    // 3. Convert response back to speech (optional)
+    
+    const placeholderTranscription = "[Voice message received but transcription not implemented]";
+    const placeholderResponse = "Voice message processing is not yet fully implemented. Please send a text message instead.";
+    
+    res.json({
+      success: true,
+      response: placeholderResponse,
+      transcribedText: placeholderTranscription,
+      language: language || 'en',
+      actionExecuted: null,
+      needsConfirmation: null
+    });
+  } catch (error) {
+    console.error('❌ Voice processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process voice message: ' + error.message
+    });
+  }
+});
+
+// 📜 Get conversation history
+app.get('/api/chatbot/history/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const history = chatbot.getConversationHistory(userId);
+    
+    res.json({
+      success: true,
+      history,
+      conversationCount: history.length
+    });
+  } catch (error) {
+    console.error('❌ Get history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get conversation history: ' + error.message,
+      history: []
+    });
+  }
+});
+
+// 🗑️ Clear conversation history
+app.delete('/api/chatbot/history/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const cleared = chatbot.clearConversation(userId);
+    
+    res.json({
+      success: true,
+      cleared,
+      message: cleared ? 'Conversation history cleared' : 'No conversation found'
+    });
+  } catch (error) {
+    console.error('❌ Clear history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to clear conversation history: ' + error.message
+    });
+  }
+});
+
+// 🌍 Set user language preference
+app.put('/api/chatbot/language/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const { language } = req.body;
+    
+    if (!language) {
+      return res.status(400).json({
+        success: false,
+        message: 'Language is required'
+      });
+    }
+
+    const updated = chatbot.setLanguage(userId, language);
+    
+    res.json({
+      success: updated,
+      language,
+      message: updated ? 'Language preference updated' : 'Invalid language or user not found'
+    });
+  } catch (error) {
+    console.error('❌ Set language error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to set language: ' + error.message
+    });
+  }
+});
+
+// ℹ️ Get session information
+app.get('/api/chatbot/session/:userId', async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const sessionInfo = chatbot.getSessionInfo(userId);
+    
+    if (!sessionInfo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      session: sessionInfo
+    });
+  } catch (error) {
+    console.error('❌ Get session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get session info: ' + error.message
+    });
+  }
+});
+
+// 🔍 Product search through chatbot
+app.post('/api/chatbot/search', async (req, res) => {
+  try {
+    const { query, language = 'en', userType = 'buyer' } = req.body;
+    
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    // Get products from database
+    const products = await db.getAllProducts();
+    const formattedProducts = products.map(p => {
+      const hasNumericKeys = Object.keys(p).every(key => !isNaN(key)) || Array.isArray(p);
+      
+      if (hasNumericKeys) {
+        return {
+          id: p[0] || `product_${Date.now()}_${Math.random()}`,
+          name: p[2] || 'Unknown Product',
+          name_en: p[3] || '',
+          name_te: p[4] || '',
+          name_hi: p[5] || '',
+          price: parseFloat(p[10]) || 0,
+          stock: parseInt(p[12]) || 0,
+          description: p[14] || '',
+          image: p[22] || 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400&h=300&fit=crop'
+        };
+      } else {
+        return {
+          id: p.get('id') || p.id,
+          name: p.get('name') || p.name,
+          name_en: p.get('name_en') || p.name_en || '',
+          name_te: p.get('name_te') || p.name_te || '',
+          name_hi: p.get('name_hi') || p.name_hi || '',
+          price: parseFloat(p.get('price') || p.price || 0),
+          stock: parseInt(p.get('stock') || p.stock || 0),
+          description: p.get('description') || p.description || '',
+          image: p.get('image') || p.image || 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=400&h=300&fit=crop'
+        };
+      }
+    }).filter(p => p.name && p.name !== 'Unknown Product' && p.price > 0);
+
+    // Use chatbot's search functionality
+    const searchResults = await chatbot.searchProducts(query, formattedProducts, language);
+    
+    res.json({
+      success: true,
+      query,
+      language,
+      results: searchResults.slice(0, 10), // Limit to 10 results
+      totalFound: searchResults.length
+    });
+  } catch (error) {
+    console.error('❌ Chatbot search error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to search products: ' + error.message,
+      results: []
+    });
+  }
+});
+
+// 🎯 Get product recommendations
+app.post('/api/chatbot/recommendations', async (req, res) => {
+  try {
+    const { productId, userId, limit = 5 } = req.body;
+    
+    if (!productId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Product ID is required'
+      });
+    }
+
+    // Get products from database
+    const products = await db.getAllProducts();
+    const formattedProducts = products.map(p => {
+      const hasNumericKeys = Object.keys(p).every(key => !isNaN(key)) || Array.isArray(p);
+      
+      if (hasNumericKeys) {
+        return {
+          id: p[0],
+          name: p[2],
+          price: parseFloat(p[10]) || 0,
+          stock: parseInt(p[12]) || 0
+        };
+      } else {
+        return {
+          id: p.get('id') || p.id,
+          name: p.get('name') || p.name,
+          price: parseFloat(p.get('price') || p.price || 0),
+          stock: parseInt(p.get('stock') || p.stock || 0)
+        };
+      }
+    }).filter(p => p.name && p.price > 0 && p.stock > 0);
+
+    // Find the target product
+    const targetProduct = formattedProducts.find(p => p.id === productId);
+    
+    if (!targetProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found'
+      });
+    }
+
+    // Generate recommendations
+    const recommendations = chatbot.generateRecommendations(targetProduct, formattedProducts, limit);
+    
+    res.json({
+      success: true,
+      productId,
+      recommendations,
+      count: recommendations.length
+    });
+  } catch (error) {
+    console.error('❌ Recommendations error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get recommendations: ' + error.message,
+      recommendations: []
+    });
+  }
+});
+
 // ===== ERROR HANDLERS =====
 app.use((error, req, res, next) => {
   if (error.status === 400 && error.message.includes('Invalid JSON')) {
@@ -1963,7 +2389,9 @@ app.use('*', (req, res) => {
 app.listen(port, () => {
   console.log(`✅ Server running at http://localhost:${port}`);
   console.log(`✅ Test the server at: http://localhost:${port}/api/test`);
-  console.log(`✅ Enhanced with MULTILINGUAL ARRAY FORMAT + FIXED CART SUPPORT 🌍🛒`);
+  console.log(`✅ 🤖 MULTILINGUAL GEMINI CHATBOT + E-COMMERCE API 🌍🛒`);
+  console.log(`✅ 🎆 CHATBOT READY! Look for the 🤖 button in your dashboard`);
+  console.log(`✅ 🗣️ Supports: English, Hindi, Telugu, Bengali, Marathi, Tamil, Urdu`);
   console.log(`✅ Available routes:`);
   console.log(`   GET  /api/test`);
   console.log(`   POST /api/auth/login`);
@@ -1978,6 +2406,15 @@ app.listen(port, () => {
   console.log(`   POST /api/orders`);
   console.log(`   GET  /api/orders/buyer/:buyerId`);
   console.log(`   GET  /api/orders/seller/:sellerId`);
+  console.log(`\n🤖 CHATBOT API ROUTES:`);
+  console.log(`   POST /api/chatbot/message - Main chatbot interaction`);
+  console.log(`   POST /api/chatbot/voice - Voice message processing`);
+  console.log(`   GET  /api/chatbot/history/:userId - Get conversation history`);
+  console.log(`   DELETE /api/chatbot/history/:userId - Clear conversation`);
+  console.log(`   PUT  /api/chatbot/language/:userId - Set language preference`);
+  console.log(`   GET  /api/chatbot/session/:userId - Get session info`);
+  console.log(`   POST /api/chatbot/search - Intelligent product search`);
+  console.log(`   POST /api/chatbot/recommendations - Product recommendations`);
 });
 
 process.on('SIGTERM', () => {
