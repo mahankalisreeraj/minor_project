@@ -13,18 +13,10 @@ class MultilingualChatbot {
       this.model = null;
     } else {
       try {
-        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const configuredModel = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
-        const modelName = configuredModel.endsWith('-latest') 
-          ? configuredModel.replace('-latest', '') 
-          : configuredModel;
-        this.currentModelName = modelName;
-        this.fallbackModels = [
-          'gemini-1.5-flash-8b',
-          'gemini-1.0-pro'
-        ];
-        this.model = this.genAI.getGenerativeModel({ model: this.currentModelName });
-        console.log('✅ Gemini AI initialized successfully with model:', this.currentModelName);
+        // Force v1 API and use a v1-supported model
+        this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY, { apiVersion: 'v1' });
+        this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        console.log('✅ Gemini AI initialized successfully with model: gemini-1.5-flash (v1)');
       } catch (error) {
         console.error('❌ Failed to initialize Gemini AI:', error.message);
         this.genAI = null;
@@ -62,40 +54,11 @@ class MultilingualChatbot {
     this.initializeSystemPrompts();
   }
 
-  // Attempt generateContent with automatic model fallbacks when v1beta 404 occurs
-  async generateContentWithFallback(contents, contextTag = 'general') {
-    if (!this.genAI) {
+  async generateContent(contents) {
+    if (!this.model) {
       throw new Error('Gemini not initialized');
     }
-
-    // Build ordered list of models to try
-    const modelsToTry = [this.currentModelName, ...this.fallbackModels];
-
-    for (let i = 0; i < modelsToTry.length; i++) {
-      const modelName = modelsToTry[i];
-      try {
-        // Switch model when trying fallbacks
-        if (!this.model || this.currentModelName !== modelName) {
-          this.model = this.genAI.getGenerativeModel({ model: modelName });
-          this.currentModelName = modelName;
-          console.log(`🔁 Using model '${modelName}' for ${contextTag}`);
-        }
-
-        const result = await this.model.generateContent({ contents });
-        return result;
-      } catch (error) {
-        const message = String(error?.message || error);
-        // Only fallback when explicit v1beta model unsupported/404 is detected
-        if (message.includes('404 Not Found') && message.includes('is not found for API version v1beta')) {
-          console.warn(`⚠️ Model '${modelName}' not supported for v1beta generateContent. Trying next fallback…`);
-          continue; // try next model
-        }
-        // For other errors, rethrow to upper layer
-        throw error;
-      }
-    }
-
-    throw new Error('No supported Gemini model available after fallbacks');
+    return await this.model.generateContent({ contents });
   }
 
   initializeSystemPrompts() {
@@ -362,7 +325,7 @@ Provide a helpful, data-driven response for the seller. Use the analytics data w
           ]
         }
       ];
-      const result = await this.generateContentWithFallback(sellContents, 'processSellQuery');
+      const result = await this.generateContent(sellContents);
 
       const response = result.response.text();
 
@@ -437,7 +400,7 @@ Provide a helpful, friendly response for the buyer. If they're looking for produ
           ]
         }
       ];
-      const result = await this.generateContentWithFallback(buyerContents, 'processBuyerQuery');
+      const result = await this.generateContent(buyerContents);
 
       const response = result.response.text();
 
@@ -524,7 +487,7 @@ Provide a helpful, friendly response for the buyer. If they're looking for produ
         console.log('🎯 Detected actionable intent:', intent);
         const actionResult = await this.actionHandler.executeAction(intent, userId, userType);
         
-        if (actionResult.success) {
+        if (actionResult && actionResult.success) {
           const response = actionResult.message;
           session.conversationHistory.push({
             role: 'assistant',

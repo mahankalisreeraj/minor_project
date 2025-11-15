@@ -337,7 +337,17 @@ const mockOrders = [
   }
 ];
 
+// Simple mock reviews used as fallback when Sheets API hits quota
+const mockReviews = [
+  { id: 'rev_001', productId: 'product_001', buyerId: 'buyer_001', rating: 5, comment: 'Excellent quality!', createdAt: '2025-07-11T10:00:00Z' },
+  { id: 'rev_002', productId: 'product_001', buyerId: 'buyer_002', rating: 4, comment: 'Very good', createdAt: '2025-07-12T12:30:00Z' },
+  { id: 'rev_003', productId: 'product_002', buyerId: 'buyer_003', rating: 3, comment: 'Average', createdAt: '2025-07-13T09:15:00Z' },
+  { id: 'rev_004', productId: 'product_008', buyerId: 'buyer_004', rating: 5, comment: 'Loved it', createdAt: '2025-07-21T09:00:00Z' },
+  { id: 'rev_005', productId: 'product_009', buyerId: 'buyer_005', rating: 4, comment: 'Useful stand', createdAt: '2025-08-03T08:45:00Z' }
+];
+
 module.exports = {
   mockProducts,
-  mockOrders
+  mockOrders,
+  mockReviews
 };

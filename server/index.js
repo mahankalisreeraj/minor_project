@@ -57,6 +57,11 @@
 //   res.json({ success: true, message: 'Server is running!' });
 // });
 
+// app.get('/api/usage-metrics', (req, res) => {
+//   const metrics = db.getUsageMetrics();
+//   res.json({ success: true, metrics });
+// });
+
 // app.get('/', (req, res) => {
 //   res.send('EcommerceHub API Server is running!');
 // });
@@ -1056,7 +1061,7 @@ const cors = require('cors');
 const multer = require('multer');
 require('dotenv').config();
 const GoogleSheetsDB = require('./googleSheetsAPI');
-const { mockProducts, mockOrders } = require('./mockData');
+const { mockProducts, mockOrders, mockReviews } = require('./mockData');
 const MultilingualChatbot = require('./chatbotService');
 
 const app = express();
@@ -1064,7 +1069,33 @@ const port = process.env.PORT || 3001;
 
 // Enhanced CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman, file://)
+    if (!origin) return callback(null, true);
+    // Allow special 'null' origin used by file:// schemes
+    if (origin === 'null') return callback(null, true);
+
+    const allowedOrigins = new Set([
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+      'http://localhost:5500',
+      'http://127.0.0.1:5500'
+    ]);
+
+    if (allowedOrigins.has(origin)) {
+      return callback(null, true);
+    }
+
+    // In development, allow other localhost origins
+    if (/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Fallback: reject unknown non-local origins
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -1131,6 +1162,14 @@ app.get('/api/test', (req, res) => {
 
 app.get('/', (req, res) => {
   res.send('EcommerceHub API Server is running!');
+});
+
+// Placeholder image route
+app.get('/api/placeholder/:width/:height', (req, res) => {
+  const { width, height } = req.params;
+  const placeholderUrl = `https://via.placeholder.com/${width}x${height}.png?text=No+Image`;
+  console.log(`🖼️ Redirecting to placeholder: ${placeholderUrl}`);
+  res.redirect(placeholderUrl);
 });
 
 // ===== AUTH ROUTES =====
@@ -1378,6 +1417,17 @@ app.get('/api/products', async (req, res) => {
         // Add calculated fields
         product.originalPrice = product.originalPrice || Math.round(product.price * 1.3);
         
+        // Compute Product Quality Index (PQI)
+        const marginPct = product.price > 0 ? ((product.price - (product.cost || 0)) / product.price) * 100 : 0;
+        const marginScore = Math.max(0, Math.min(100, marginPct));
+        const salesScore = Math.max(0, Math.min(100, (product.sales || 0) / 500 * 100));
+        const stockScore = Math.max(0, Math.min(100, (product.stock || 0) / 100 * 100));
+        const contentFields = [product.name, product.description, product.image, product.name_en, product.description_en];
+        const contentFilled = contentFields.filter(v => v && String(v).trim() !== '').length;
+        const contentScore = (contentFilled / contentFields.length) * 100;
+        const pqi = (0.4 * marginScore) + (0.3 * salesScore) + (0.1 * stockScore) + (0.2 * contentScore);
+        product.pqi = Math.round(pqi * 10) / 10;
+        
         return product;
       })
       .filter(p => {
@@ -1395,7 +1445,27 @@ app.get('/api/products', async (req, res) => {
       console.log(`🏪 Filtered products for seller ${sellerId}:`, filteredProducts.length);
     }
 
-    console.log('✅ Returning products with multilingual support:', filteredProducts.length);
+    // ✅ Compute PQI (1-5) from reviews
+    const productsWithPQI = await Promise.all(filteredProducts.map(async (prod) => {
+      try {
+        if (typeof db.getAverageRatingForProduct === 'function') {
+          const { average, count } = await db.getAverageRatingForProduct(prod.id);
+          const pqi = count > 0 ? Math.max(1, Math.min(5, Number(average))) : 4;
+          return { ...prod, pqi: Math.round(pqi * 10) / 10, reviewCount: count };
+        }
+      } catch (err) {
+        // Fallback to mock reviews if Sheets fails
+        const reviews = (mockReviews || []).filter(r => r.productId === prod.id);
+        const count = reviews.length;
+        const avg = count > 0 ? reviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / count : 4;
+        const pqi = count > 0 ? Math.max(1, Math.min(5, avg)) : 4;
+        return { ...prod, pqi: Math.round(pqi * 10) / 10, reviewCount: count };
+      }
+      // If no method available, attach zeros
+      return { ...prod, pqi: 4, reviewCount: 0 };
+    }));
+
+    console.log('✅ Returning products with multilingual support:', productsWithPQI.length);
     
     // Show multilingual statistics
     if (filteredProducts.length > 0) {
@@ -1431,7 +1501,7 @@ app.get('/api/products', async (req, res) => {
       console.log('  With Hindi descriptions:', stats.withHindiDesc);
     }
 
-    res.json({ success: true, products: filteredProducts });
+    res.json({ success: true, products: productsWithPQI });
   } catch (error) {
     console.error('❌ Get products error:', error);
     res.status(500).json({ 
@@ -1459,6 +1529,71 @@ app.post('/api/products', async (req, res) => {
       success: false, 
       message: 'Failed to create product: ' + error.message 
     });
+  }
+});
+
+// ===== REVIEW ROUTES =====
+app.get('/api/products/:productId/reviews', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    let rows = [];
+    try {
+      if (typeof db.getReviewsByProduct === 'function') {
+        rows = await db.getReviewsByProduct(productId);
+      }
+    } catch (err) {
+      rows = (mockReviews || []).filter(r => r.productId === productId);
+    }
+
+    const reviews = rows.map(r => ({
+      id: r.get ? (r.get('id') || r.id) : r.id,
+      productId: r.get ? (r.get('productId') || r.productId) : r.productId,
+      buyerId: r.get ? (r.get('buyerId') || r.buyerId) : r.buyerId,
+      rating: Number(r.get ? (r.get('rating') || r.rating) : r.rating) || 0,
+      comment: r.get ? (r.get('comment') || r.comment) : r.comment || '',
+      createdAt: r.get ? (r.get('createdAt') || r.createdAt) : r.createdAt || new Date().toISOString(),
+    }));
+
+    res.json({ success: true, reviews });
+  } catch (error) {
+    console.error('❌ Get reviews error:', error);
+    res.status(500).json({ success: false, reviews: [], message: 'Failed to fetch reviews: ' + error.message });
+  }
+});
+
+app.post('/api/products/:productId/reviews', async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { buyerId, rating, comment } = req.body || {};
+
+    if (!buyerId || !rating) {
+      return res.status(400).json({ success: false, message: 'buyerId and rating are required' });
+    }
+
+    let saved;
+    try {
+      if (typeof db.addReview === 'function') {
+        saved = await db.addReview({ productId, buyerId, rating: Number(rating), comment });
+      }
+    } catch (err) {
+      // Fallback: echo back review (not persisted)
+      saved = { id: Date.now().toString(), productId, buyerId, rating: Number(rating), comment, createdAt: new Date().toISOString() };
+    }
+
+    res.json({
+      success: true,
+      review: saved.get ? {
+        id: saved.get('id') || saved.id,
+        productId: saved.get('productId') || saved.productId,
+        buyerId: saved.get('buyerId') || saved.buyerId,
+        rating: Number(saved.get('rating') || saved.rating) || 0,
+        comment: saved.get('comment') || saved.comment || '',
+        createdAt: saved.get('createdAt') || saved.createdAt || new Date().toISOString()
+      } : saved
+    });
+  } catch (error) {
+    console.error('❌ Create review error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create review: ' + error.message });
   }
 });
 
@@ -1927,7 +2062,6 @@ app.get('/api/orders/seller/:sellerId', async (req, res) => {
           .filter(order => order.sellerId === sellerId)
           .map(order => ({ 
             get: (key) => order[key],
-            _rawData: order,
             ...order 
           }));
       } else {
@@ -1937,7 +2071,13 @@ app.get('/api/orders/seller/:sellerId', async (req, res) => {
     
     res.json({ 
       success: true, 
-      orders: orders.map(o => ({ id: o.get('id') || o.id, ...o._rawData }))
+      orders: orders.map(o => {
+        const orderData = o.toObject ? o.toObject() : o;
+        return {
+          ...orderData,
+          id: orderData.id || (o.get ? o.get('id') : null),
+        };
+      })
     });
   } catch (error) {
     console.error('❌ Get seller orders error:', error);
@@ -1945,6 +2085,38 @@ app.get('/api/orders/seller/:sellerId', async (req, res) => {
       success: false, 
       message: 'Failed to fetch orders: ' + error.message,
       orders: []
+    });
+  }
+});
+
+app.put('/api/orders/:orderId/status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+    console.log(`✅ Update order status request: ${orderId} to ${status}`);
+
+    if (!orderId || !status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID and status are required',
+      });
+    }
+
+    const updatedOrder = await db.updateOrderStatus(orderId, status);
+
+    if (updatedOrder) {
+      res.json({
+        success: true,
+        order: { id: updatedOrder.get('id') || updatedOrder.id, ...updatedOrder._rawData },
+      });
+    } else {
+      res.status(404).json({ success: false, message: 'Order not found' });
+    }
+  } catch (error) {
+    console.error('❌ Update order status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update order status: ' + error.message,
     });
   }
 });

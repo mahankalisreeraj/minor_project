@@ -784,11 +784,39 @@ class GoogleSheetsDB {
       key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
+    this.readRequestTimestamps = [];
+    this.writeRequestTimestamps = [];
+  }
+
+  _recordReadRequest() {
+    this.readRequestTimestamps.push(Date.now());
+  }
+
+  _recordWriteRequest() {
+    this.writeRequestTimestamps.push(Date.now());
+  }
+
+  getUsageMetrics() {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60000;
+
+    const readsInLastMinute = this.readRequestTimestamps.filter(ts => ts > oneMinuteAgo).length;
+    const writesInLastMinute = this.writeRequestTimestamps.filter(ts => ts > oneMinuteAgo).length;
+
+    // Clean up old timestamps
+    this.readRequestTimestamps = this.readRequestTimestamps.filter(ts => ts > oneMinuteAgo);
+    this.writeRequestTimestamps = this.writeRequestTimestamps.filter(ts => ts > oneMinuteAgo);
+
+    return {
+      readsPerMinute: readsInLastMinute,
+      writesPerMinute: writesInLastMinute,
+    };
   }
 
   async initialize() {
     try {
       this.doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEETS_ID, this.serviceAccountAuth);
+      this._recordReadRequest();
       await this.doc.loadInfo();
       console.log('✅ Google Sheets connected successfully');
       console.log('Document title:', this.doc.title);
@@ -801,6 +829,7 @@ class GoogleSheetsDB {
   // User operations - FIXED
   async createUser(userData) {
     const sheet = this.doc.sheetsByTitle['users'];
+    this._recordWriteRequest();
     const row = await sheet.addRow({
       id: Date.now().toString(),
       firstName: userData.firstName,
@@ -818,6 +847,7 @@ class GoogleSheetsDB {
   async findUserByEmail(email) {
     try {
       const sheet = this.doc.sheetsByTitle['users'];
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       
       console.log('Looking for email:', email);
@@ -838,12 +868,14 @@ class GoogleSheetsDB {
 
   async getAllUsers() {
     const sheet = this.doc.sheetsByTitle['users'];
+    this._recordReadRequest();
     return await sheet.getRows();
   }
 
   // ENHANCED Product operations - WITH MULTILINGUAL SUPPORT
   async createProduct(productData) {
     const sheet = this.doc.sheetsByTitle['products'];
+    this._recordWriteRequest();
     const row = await sheet.addRow({
       // Basic fields
       id: Date.now().toString(),
@@ -882,9 +914,11 @@ class GoogleSheetsDB {
       const sheet = this.doc.sheetsByTitle['products'];
       
       // ✅ ENHANCED: Load sheet info to check column headers
+      this._recordReadRequest();
       await sheet.loadHeaderRow();
       console.log('📊 AVAILABLE COLUMNS IN PRODUCTS SHEET:', sheet.headerValues);
       
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       console.log('📦 Total product rows loaded:', rows.length);
       
@@ -926,6 +960,7 @@ class GoogleSheetsDB {
 
   async getProductsBySeller(sellerId) {
     const sheet = this.doc.sheetsByTitle['products'];
+    this._recordReadRequest();
     const rows = await sheet.getRows();
     return rows.filter(row => {
       const rowSellerId = row.get('sellerId') || row.sellerId;
@@ -935,6 +970,7 @@ class GoogleSheetsDB {
 
   async updateProduct(productId, updates) {
     const sheet = this.doc.sheetsByTitle['products'];
+    this._recordReadRequest();
     const rows = await sheet.getRows();
     const product = rows.find(row => {
       const rowId = row.get('id') || row.id;
@@ -945,6 +981,7 @@ class GoogleSheetsDB {
       Object.keys(updates).forEach(key => {
         product.set(key, updates[key]);
       });
+      this._recordWriteRequest();
       await product.save();
       return product;
     }
@@ -953,6 +990,7 @@ class GoogleSheetsDB {
 
   async deleteProduct(productId) {
     const sheet = this.doc.sheetsByTitle['products'];
+    this._recordReadRequest();
     const rows = await sheet.getRows();
     const product = rows.find(row => {
       const rowId = row.get('id') || row.id;
@@ -960,6 +998,7 @@ class GoogleSheetsDB {
     });
     
     if (product) {
+      this._recordWriteRequest();
       await product.delete();
       return true;
     }
@@ -980,6 +1019,7 @@ class GoogleSheetsDB {
       const productIdStr = productId.toString();
       const quantityNum = parseInt(quantity) || 1;
 
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       console.log('Current cart rows:', rows.length);
       
@@ -994,6 +1034,7 @@ class GoogleSheetsDB {
         const newQty = currentQty + quantityNum;
         
         existingItem.set('quantity', newQty.toString());
+        this._recordWriteRequest();
         await existingItem.save();
         
         console.log('Updated existing cart item:', {
@@ -1015,6 +1056,7 @@ class GoogleSheetsDB {
         
         console.log('Adding new cart item:', newItemData);
         
+        this._recordWriteRequest();
         const newItem = await sheet.addRow(newItemData);
         
         console.log('Added new cart item successfully:', {
@@ -1035,6 +1077,7 @@ class GoogleSheetsDB {
   async getCartItems(buyerId) {
     try {
       const sheet = this.doc.sheetsByTitle['cart'];
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       return rows.filter(row => {
         const rowBuyerId = row.get('buyerId') || row.buyerId;
@@ -1049,6 +1092,7 @@ class GoogleSheetsDB {
   async updateCartItem(cartId, quantity) {
     try {
       const sheet = this.doc.sheetsByTitle['cart'];
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       const item = rows.find(row => {
         const rowId = row.get('id') || row.id;
@@ -1057,10 +1101,12 @@ class GoogleSheetsDB {
       
       if (item) {
         if (quantity <= 0) {
+          this._recordWriteRequest();
           await item.delete();
           return null;
         } else {
           item.set('quantity', quantity.toString());
+          this._recordWriteRequest();
           await item.save();
           return item;
         }
@@ -1075,6 +1121,7 @@ class GoogleSheetsDB {
   async removeFromCart(cartId) {
     try {
       const sheet = this.doc.sheetsByTitle['cart'];
+      this._recordReadRequest();
       const rows = await sheet.getRows();
       const item = rows.find(row => {
         const rowId = row.get('id') || row.id;
@@ -1082,6 +1129,7 @@ class GoogleSheetsDB {
       });
       
       if (item) {
+        this._recordWriteRequest();
         await item.delete();
         return true;
       }
@@ -1095,6 +1143,7 @@ class GoogleSheetsDB {
   // Order operations - FIXED
   async createOrder(orderData) {
     const sheet = this.doc.sheetsByTitle['orders'];
+    this._recordWriteRequest();
     return await sheet.addRow({
       id: Date.now().toString(),
       buyerId: orderData.buyerId,
@@ -1109,6 +1158,7 @@ class GoogleSheetsDB {
 
   async getOrdersByBuyer(buyerId) {
     const sheet = this.doc.sheetsByTitle['orders'];
+    this._recordReadRequest();
     const rows = await sheet.getRows();
     return rows.filter(row => {
       const rowBuyerId = row.get('buyerId') || row.buyerId;
@@ -1117,12 +1167,76 @@ class GoogleSheetsDB {
   }
 
   async getOrdersBySeller(sellerId) {
-    const sheet = this.doc.sheetsByTitle['orders'];
-    const rows = await sheet.getRows();
-    return rows.filter(row => {
-      const rowSellerId = row.get('sellerId') || row.sellerId;
-      return rowSellerId === sellerId;
+    const ordersSheet = this.doc.sheetsByTitle['orders'];
+    const productsSheet = this.doc.sheetsByTitle['products'];
+    const usersSheet = this.doc.sheetsByTitle['users'];
+
+    this._recordReadRequest();
+    this._recordReadRequest();
+    this._recordReadRequest();
+    const [orderRows, productRows, userRows] = await Promise.all([
+      ordersSheet.getRows(),
+      productsSheet.getRows(),
+      usersSheet.getRows(),
+    ]);
+
+    const sellerOrders = orderRows.filter(row => (row.get('sellerId') || row.sellerId) === sellerId);
+
+    return sellerOrders.map(order => {
+      const product = productRows.find(p => (p.get('id') || p.id) === (order.get('productId') || order.productId));
+      const buyer = userRows.find(u => (u.get('id') || u.id) === (order.get('buyerId') || order.buyerId));
+      return {
+        ...order.toObject(),
+        product: product ? product.toObject() : null,
+        buyer: buyer ? { id: buyer.get('id') || buyer.id, name: `${buyer.get('firstName') || ''} ${buyer.get('lastName') || ''}`.trim() } : null,
+      };
     });
+  }
+
+  async updateOrderStatus(orderId, status) {
+    const sheet = this.doc.sheetsByTitle['orders'];
+    this._recordReadRequest();
+    const rows = await sheet.getRows();
+    const order = rows.find(row => (row.get('id') || row.id) === orderId);
+    
+    if (order) {
+      order.set('status', status);
+      this._recordWriteRequest();
+      await order.save();
+      return order;
+    }
+    return null;
+  }
+
+  async addReview(reviewData) {
+    const sheet = this.doc.sheetsByTitle['reviews'];
+    this._recordWriteRequest();
+    const row = await sheet.addRow({
+      id: Date.now().toString(),
+      productId: reviewData.productId,
+      buyerId: reviewData.buyerId,
+      rating: (reviewData.rating || 0).toString(),
+      comment: reviewData.comment || '',
+      createdAt: new Date().toISOString()
+    });
+    return row;
+  }
+
+  async getReviewsByProduct(productId) {
+    const sheet = this.doc.sheetsByTitle['reviews'];
+    this._recordReadRequest();
+    const rows = await sheet.getRows();
+    return rows.filter(r => (r.get('productId') || r.productId) === productId);
+  }
+
+  async getAverageRatingForProduct(productId) {
+    const rows = await this.getReviewsByProduct(productId);
+    const count = rows.length;
+    if (count === 0) {
+      return { average: 0, count: 0 };
+    }
+    const sum = rows.reduce((acc, r) => acc + parseFloat(r.get('rating') || r.rating || 0), 0);
+    return { average: sum / count, count };
   }
 }
 
