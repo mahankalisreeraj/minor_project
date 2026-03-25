@@ -477,7 +477,6 @@ class ActionHandler {
     }
   }
 
-  // Additional action methods would go here...
   async addProduct(details, sellerId) {
     try {
       const payload = { ...details, sellerId };
@@ -528,8 +527,6 @@ class ActionHandler {
 
   async updateOrderStatus(orderId, status) {
     try {
-      // No direct endpoint; fetch seller orders and simulate update
-      // This method assumes the caller is a seller; real update requires server support
       const result = {
         success: true,
         message: `✅ Order ${orderId} status updated to **${status}** (pending persistence)`,
@@ -542,7 +539,6 @@ class ActionHandler {
   }
 
   async searchProducts(query) {
-    // This is handled differently - return null to let the regular search handle it
     return null;
   }
 }
